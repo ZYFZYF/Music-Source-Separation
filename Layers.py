@@ -45,12 +45,14 @@ class Hourglass(nn.Module):
                                    Conv(channels, next_depth_channels),
                                    Hourglass(depth - 1, next_depth_channels,
                                              next_depth_add_channels) if depth else Conv(
-                                       channels, next_depth_channels),
+                                       next_depth_channels, next_depth_channels),
                                    Conv(next_depth_channels, channels),
                                    nn.UpsamplingNearest2d(scale_factor=2))  # TODO 修改此处上采样的方式
         self.skip = Conv(channels, channels)
 
     def forward(self, x):
+        print(self.skip(x).size())
+        print(self.model(x).size())
         return self.skip(x) + self.model(x)
 
 
@@ -61,3 +63,7 @@ if __name__ == "__main__":
     print(conv)
     hourglass = Hourglass(depth=4, channels=64, next_depth_add_channels=64)
     print(hourglass)
+    input = torch.rand(3,64,128,128)
+    output = hourglass(input)
+    print(input)
+    print(output)
