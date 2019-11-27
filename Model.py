@@ -52,13 +52,13 @@ class Hourglass(nn.Module):
         self.skip = Conv(channels, channels)
 
     def forward(self, x):
-        print(self.skip(x).size())
-        print(self.model(x).size())
+        # print(self.skip(x).size())
+        # print(self.model(x).size())
         return self.skip(x) + self.model(x)
 
 
 class StackedHourglassNet(nn.Module):
-    def __init__(self, num_stacks, input_channels, output_channes, next_depth_add_channels):
+    def __init__(self, num_stacks, input_channels, output_channels, next_depth_add_channels):
         super(StackedHourglassNet, self).__init__()
         self.num_stacks = num_stacks
         self.prepare = nn.Sequential(Conv(1, 64, kernel_size=7, stride=1),
@@ -72,11 +72,11 @@ class StackedHourglassNet(nn.Module):
                           Conv(input_channels, input_channels),
                           Conv(input_channels, input_channels, 1)) for i in range(num_stacks))
         # 输出Mask的上面的path
-        self.output = nn.ModuleList(Conv(input_channels, output_channes) for i in range(num_stacks))
+        self.output = nn.ModuleList(Conv(input_channels, output_channels) for i in range(num_stacks))
         # 输向下一个沙漏的features的下面的path
         self.next = nn.ModuleList(Conv(input_channels, input_channels) for i in range(num_stacks - 1))
         # 合并上面和下面，所以这里相当于下一个网络在拟合残差
-        self.merge = nn.ModuleList(Conv(output_channes, input_channels) for i in range(num_stacks - 1))
+        self.merge = nn.ModuleList(Conv(output_channels, input_channels) for i in range(num_stacks - 1))
 
     def forward(self, x):
         x = self.prepare(x)
@@ -86,7 +86,7 @@ class StackedHourglassNet(nn.Module):
             x = self.hourglass[i](x)
             predicts.append(self.output[i](x))
             if i != self.num_stacks - 1:
-                x = self.merge(predicts[-1]) + self.next(x)
+                x = self.merge[i](predicts[-1]) + self.next[i](x)
         # 因为第一维是batch
         return torch.stack(predicts, 1)
 
@@ -102,3 +102,11 @@ if __name__ == "__main__":
     output = hourglass(input)
     print(input)
     print(output)
+    stackedHourglassNet = StackedHourglassNet(num_stacks=4, input_channels=64, output_channels=2,
+                                              next_depth_add_channels=64)
+    print(stackedHourglassNet)
+    input = torch.rand(3, 1, 128, 128)
+    output = stackedHourglassNet(input)
+    print(input)
+    print(input.size())
+    print(output.size())
