@@ -18,7 +18,7 @@ def mir_1k_data_generator(train):
                 to_spectrum(np.asfortranarray(left_source_origin)))  # 以前是不需要做这一步的来让flags['F_CONTIGUOUS']=True的
             right_source_magnitude_spectrum = np.abs(to_spectrum(np.asfortranarray(right_source_origin)))
 
-            # 归一化 # TODO 可以试试不做归一化会怎么样
+            # 归一化 TODO 可以试试不做归一化会怎么样
             max_value = np.max(mixed_source_magnitude_spectrum)
             mixed_source_magnitude_spectrum = mixed_source_magnitude_spectrum / max_value
             left_source_magnitude_spectrum = left_source_magnitude_spectrum / max_value

@@ -58,25 +58,26 @@ class Hourglass(nn.Module):
 
 
 class StackedHourglassNet(nn.Module):
-    def __init__(self, num_stacks, input_channels, output_channels, next_depth_add_channels):
+    def __init__(self, num_stacks, first_depth_channels, output_channels, next_depth_add_channels):
         super(StackedHourglassNet, self).__init__()
         self.num_stacks = num_stacks
         self.prepare = nn.Sequential(Conv(1, 64, kernel_size=7, stride=1),
                                      # TODO 这里PosNet是stride为3，padding为2，之后可以试试，先保持和SHNet一样
                                      Conv(64, 128),  # 这里对于原来PosNet来说少了个下采样MaxPooling，我觉得是合理的
                                      Conv(128, 128),
-                                     Conv(128, input_channels))
+                                     Conv(128, first_depth_channels))
         # 堆叠沙漏模块
         self.hourglass = nn.ModuleList(
-            nn.Sequential(Hourglass(depth=4, channels=input_channels, next_depth_add_channels=next_depth_add_channels),
-                          Conv(input_channels, input_channels),
-                          Conv(input_channels, input_channels, 1)) for i in range(num_stacks))
+            nn.Sequential(
+                Hourglass(depth=4, channels=first_depth_channels, next_depth_add_channels=next_depth_add_channels),
+                Conv(first_depth_channels, first_depth_channels),
+                Conv(first_depth_channels, first_depth_channels, 1)) for i in range(num_stacks))
         # 输出Mask的上面的path
-        self.output = nn.ModuleList(Conv(input_channels, output_channels) for i in range(num_stacks))
+        self.output = nn.ModuleList(Conv(first_depth_channels, output_channels) for i in range(num_stacks))
         # 输向下一个沙漏的features的下面的path
-        self.next = nn.ModuleList(Conv(input_channels, input_channels) for i in range(num_stacks - 1))
+        self.next = nn.ModuleList(Conv(first_depth_channels, first_depth_channels) for i in range(num_stacks - 1))
         # 合并上面和下面，所以这里相当于下一个网络在拟合残差
-        self.merge = nn.ModuleList(Conv(output_channels, input_channels) for i in range(num_stacks - 1))
+        self.merge = nn.ModuleList(Conv(output_channels, first_depth_channels) for i in range(num_stacks - 1))
 
     def forward(self, x):
         x = self.prepare(x)
@@ -87,8 +88,8 @@ class StackedHourglassNet(nn.Module):
             predicts.append(self.output[i](x))
             if i != self.num_stacks - 1:
                 x = self.merge[i](predicts[-1]) + self.next[i](x)
-        # 因为第一维是batch
-        return torch.stack(predicts, 1)
+        # 返回的第一维是多个loss，第二维是batch，后面两个通道
+        return torch.stack(predicts, 0)
 
 
 if __name__ == "__main__":
@@ -102,7 +103,7 @@ if __name__ == "__main__":
     output = hourglass(input)
     print(input)
     print(output)
-    stackedHourglassNet = StackedHourglassNet(num_stacks=4, input_channels=64, output_channels=2,
+    stackedHourglassNet = StackedHourglassNet(num_stacks=4, first_depth_channels=64, output_channels=2,
                                               next_depth_add_channels=64)
     print(stackedHourglassNet)
     input = torch.rand(3, 1, 128, 128)
