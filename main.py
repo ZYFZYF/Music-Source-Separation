@@ -9,9 +9,12 @@ BATCH_SIZE = 4  # 每个batch的大小
 STACKED_LEVEL = 2  # 堆叠沙漏网络的层数
 SAVE_POINT = 1  # 保存点
 
+GPUS = [0]
+
 
 def judge(input, output, predict):
     los = torch.empty(1)
+    # 每个堆叠沙漏网络的输出的loss和
     for j in range(STACKED_LEVEL):
         los += torch.mean(torch.abs(predict[j].mul(input) - output))
     return los
@@ -28,6 +31,9 @@ def train():
     print("-------------------train data loaded----------------------")
     # TODO 这里设成输出为2通道，可以尝试输出一通道效果如何，同时也得更改loss计算方式
     net = Model.StackedHourglassNet(num_stacks=2, first_depth_channels=64, output_channels=2, next_depth_add_channels=0)
+    cuda_available = torch.cuda.is_available()
+    if cuda_available:
+        net = torch.nn.DataParallel(net, device_ids=GPUS).cuda()
     optimizer = torch.optim.Adam(net.parameters(), lr=0.1)
     loss_sum = torch.empty(1)
     print("-------------------begin training...----------------------")
@@ -42,6 +48,9 @@ def train():
             input[j, 0, :, :] = torch.from_numpy(mixed_mag[:512, start:start + 64])
             output[j, 0, :, :] = torch.from_numpy(left_mag[:512, start:start + 64])
             output[j, 1, :, :] = torch.from_numpy(right_mag[:512, start:start + 64])
+            if cuda_available:
+                input = input.cuda()
+                output = output.cuda()
         optimizer.zero_grad()
         predict = net(input)
         loss = judge(input, output, predict)
@@ -49,6 +58,7 @@ def train():
         loss_sum += loss
         optimizer.step()
         if i % SAVE_POINT == SAVE_POINT - 1:
+            torch.save(net.state_dict(), 'Model/train_{}.pt'.format(i))
             print("loss of {} is {}".format(i, loss_sum / SAVE_POINT))
     print("-------------------end training.....----------------------")
 
