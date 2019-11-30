@@ -3,7 +3,7 @@ import glob
 import librosa
 import numpy as np
 import soundfile
-import museval
+import mir_eval
 
 
 def mir_1k_data_generator(train):
@@ -51,10 +51,10 @@ def bss_eval(mixed_wav, src1_wav, src2_wav, pred_src1_wav, pred_src2_wav):
     src1_wav = src1_wav[:len]
     src2_wav = src2_wav[:len]
     mixed_wav = mixed_wav[:len]
-    sdr, sir, sar, _ = museval.metrics.bss_eval_sources(np.array([src1_wav, src2_wav]),
-                                                        np.array([pred_src1_wav, pred_src2_wav]))
-    sdr_mixed, _, _, _ = museval.metrics.bss_eval_sources(np.array([src1_wav, src2_wav]),
-                                                          np.array([mixed_wav, mixed_wav]))
+    sdr, sir, sar, _ = mir_eval.separation.bss_eval_sources(np.array([src1_wav, src2_wav]),
+                                                            np.array([pred_src1_wav, pred_src2_wav]))
+    sdr_mixed, _, _, _ = mir_eval.separation.bss_eval_sources(np.array([src1_wav, src2_wav]),
+                                                              np.array([mixed_wav, mixed_wav]))
     nsdr = sdr - sdr_mixed
     return nsdr, sir, sar, len
 

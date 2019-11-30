@@ -8,7 +8,8 @@ import librosa
 MAX_ITERATIONS = 1000  # 进行这么多batch的训练
 BATCH_SIZE = 4  # 每个batch的大小
 STACKED_LEVEL = 2  # 堆叠沙漏网络的层数
-SAVE_POINT = 50  # 保存点
+TRAIN_SAVE_POINT = 50  # 保存点
+TEST_STEP = 20  # 测试时
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print('train device: {}'.format(device))
@@ -60,9 +61,9 @@ def train():
         loss.backward()
         loss_sum += loss
         optimizer.step()
-        if i % SAVE_POINT == SAVE_POINT - 1:
+        if i % TRAIN_SAVE_POINT == TRAIN_SAVE_POINT - 1:
             torch.save(net.state_dict(), 'Model/checkpoint_{}.pt'.format(i))
-            print("loss of {} is {}".format(i, loss_sum / SAVE_POINT))
+            print("loss of {} is {}".format(i, loss_sum / TRAIN_SAVE_POINT))
             loss_sum = 0
     torch.save(net.state_dict(), 'Model/checkpoint_final.pt')
     print("-------------------end training.....----------------------")
@@ -80,6 +81,7 @@ def test():
     gsar = 0.
     totalLen = 0.
     pbar = tqdm.tqdm(total=825)
+    cnt = 0
     for left_origin, right_origin, mix_origin, left_mag, right_mag, mix_mag, max_value, mix_spec_phase in Utils.mir_1k_data_generator(
             train=False):
         srcLen = mix_mag.shape[-1]
@@ -115,24 +117,25 @@ def test():
         nsdr, sir, sar, lens = Utils.bss_eval(mix_origin, left_origin, right_origin, predict_left_wav,
                                               predict_right_wav)
 
-        printstr = str(nsdr) + ' ' + str(sir) + ' ' + str(sar)
-        print(printstr)
-
         totalLen = totalLen + lens
         gnsdr = gnsdr + nsdr * lens
         gsir = gsir + sir * lens
         gsar = gsar + sar * lens
         pbar.update(1)
-        print(gnsdr / totalLen, gsir / totalLen, gsar / totalLen)
-    print('Final results')
-    # print(totalLen)
-    print('GNSDR [Accompaniments, voice]')
-    print(gnsdr / totalLen)
-    print('GSIR [Accompaniments, voice]')
-    print(gsir / totalLen)
-    print('GSAR [Accompaniments, voice]')
-    print(gsar / totalLen)
-    print('-------------------end testing.......-------------------')
+        cnt += 1
+        if cnt % TEST_STEP == 0:
+            print('人声GNSDR={} 人声GSIR={} 人声GSAR={} 伴奏GNSDR={} 伴奏GSIR={} 伴奏GSAR={}'.format((gnsdr / totalLen)[1],
+                                                                                         (gnsdr / totalLen)[0],
+                                                                                         (gsir / totalLen)[1],
+                                                                                         (gsir / totalLen)[0],
+                                                                                         (gsar / totalLen)[1],
+                                                                                         (gsar / totalLen)[0]))
+    print('人声GNSDR={} 人声GSIR={} 人声GSAR={} 伴奏GNSDR={} 伴奏GSIR={} 伴奏GSAR={}'.format((gnsdr / totalLen)[1],
+                                                                                 (gnsdr / totalLen)[0],
+                                                                                 (gsir / totalLen)[1],
+                                                                                 (gsir / totalLen)[0],
+                                                                                 (gsar / totalLen)[1],
+                                                                                 (gsar / totalLen)[0]))
 
 
 if __name__ == '__main__':
