@@ -41,8 +41,8 @@ def train():
     loss_sum = torch.empty(1).to(device)
     print("-------------------begin training...----------------------")
     for i in tqdm.tqdm(range(MAX_ITERATIONS)):
-        input = torch.randn(BATCH_SIZE, 1, 512, 64)
-        output = torch.randn(BATCH_SIZE, 2, 512, 64)
+        input = torch.empty(BATCH_SIZE, 1, 512, 64)
+        output = torch.empty(BATCH_SIZE, 2, 512, 64)
         # 每个batch都是从所有训练数据中随机得到的
         for j in range(BATCH_SIZE):
             index = np.random.randint(len(train_data))  # np.random.randint()是左闭右开
@@ -86,17 +86,28 @@ def test():
         startIndex = 0
         predict_left = np.zeros((512, srcLen), dtype=np.float32)
         predict_right = np.zeros((512, srcLen), dtype=np.float32)
+        # 除了第一次和最后一次，其余计算时都要用上上下文的信息，然后只提取中间长度为32的结果作为预测的结果
         while startIndex + 64 < srcLen:
-            input[0, 0, :, :] = mix_mag[0:512, startIndex:startIndex + 64]
-            output = net(torch.from_numpy(input).to(device))
-            output = output[-1].data.cpu().numpy()  # 取最后一个沙漏的输出作为输出
-            if startIndex == 0:
-                predict_left[:, 0:64] = output[0, 0, :, :]
-                predict_right[:, 0:64] = output[0, 1, :, :]
+            # 四个同时算，理论上能4倍加速
+            if startIndex and startIndex + 128 + 64 < srcLen:
+                for i in range(4):
+                    input[i, 0, :, :] = mix_mag[0:512, startIndex + i * 32, startIndex + i * 32 + 64]
+                output = net(torch.from_numpy(input).to(device))
+                for i in range(4):
+                    predict_left[:, startIndex + i * 32 + 16: startIndex + i * 32 + 48] = output[i, 0, :, 16:48]
+                    predict_right[:, startIndex + i * 32 + 16:startIndex + i * 32 + 48] = output[i, 1, :, 16:48]
+                startIndex += 128 + 32
             else:
-                predict_left[:, startIndex + 16: startIndex + 48] = output[0, 0, :, 16:48]
-                predict_right[:, startIndex + 16:startIndex + 48] = output[0, 1, :, 16:48]
-            startIndex += 32
+                input[0, 0, :, :] = mix_mag[0:512, startIndex:startIndex + 64]
+                output = net(torch.from_numpy(input).to(device))
+                output = output[-1].data.cpu().numpy()  # 取最后一个沙漏的输出作为输出
+                if startIndex == 0:
+                    predict_left[:, 0:64] = output[0, 0, :, :]
+                    predict_right[:, 0:64] = output[0, 1, :, :]
+                else:
+                    predict_left[:, startIndex + 16: startIndex + 48] = output[0, 0, :, 16:48]
+                    predict_right[:, startIndex + 16:startIndex + 48] = output[0, 1, :, 16:48]
+                startIndex += 32
         input[0, 0, :, :] = mix_mag[0:512, srcLen - 64:srcLen]
         output = net(torch.from_numpy(input).to(device))
         output = output[-1].data.cpu().numpy()
