@@ -3,13 +3,15 @@ import Model
 import torch
 import numpy as np
 import tqdm
+import librosa
 
 MAX_ITERATIONS = 100  # 进行这么多batch的训练
 BATCH_SIZE = 4  # 每个batch的大小
 STACKED_LEVEL = 2  # 堆叠沙漏网络的层数
 SAVE_POINT = 1  # 保存点
 
-GPUS = [0]
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+print('train device: {}'.format(device))
 
 
 def judge(input, output, predict):
@@ -20,20 +22,20 @@ def judge(input, output, predict):
     return los
 
 
+# TODO 这里设成输出为2通道，可以尝试输出一通道效果如何，同时也得更改loss计算方式
+net = Model.StackedHourglassNet(num_stacks=2, first_depth_channels=64, output_channels=2, next_depth_add_channels=0)
+
+
 def train():
+    net.to(device)
     cnt = 0
     train_data = []
-    for _, _, _, left_mag, right_mag, mixed_mag in Utils.mir_1k_data_generator(train=True):
+    for _, _, _, left_mag, right_mag, mixed_mag, _, _ in Utils.mir_1k_data_generator(train=True):
         train_data.append((left_mag, right_mag, mixed_mag))
         cnt += 1
         if cnt == 10:
             break
     print("-------------------train data loaded----------------------")
-    # TODO 这里设成输出为2通道，可以尝试输出一通道效果如何，同时也得更改loss计算方式
-    net = Model.StackedHourglassNet(num_stacks=2, first_depth_channels=64, output_channels=2, next_depth_add_channels=0)
-    cuda_available = torch.cuda.is_available()
-    if cuda_available:
-        net = torch.nn.DataParallel(net, device_ids=GPUS).cuda()
     optimizer = torch.optim.Adam(net.parameters(), lr=0.1)
     loss_sum = torch.empty(1)
     print("-------------------begin training...----------------------")
@@ -48,9 +50,8 @@ def train():
             input[j, 0, :, :] = torch.from_numpy(mixed_mag[:512, start:start + 64])
             output[j, 0, :, :] = torch.from_numpy(left_mag[:512, start:start + 64])
             output[j, 1, :, :] = torch.from_numpy(right_mag[:512, start:start + 64])
-            if cuda_available:
-                input = input.cuda()
-                output = output.cuda()
+            input = input.to(device)
+            output = output.to(device)
         optimizer.zero_grad()
         predict = net(input)
         loss = judge(input, output, predict)
@@ -58,9 +59,70 @@ def train():
         loss_sum += loss
         optimizer.step()
         if i % SAVE_POINT == SAVE_POINT - 1:
-            torch.save(net.state_dict(), 'Model/train_{}.pt'.format(i))
+            torch.save(net.state_dict(), 'Model/checkpoint_{}.pt'.format(i))
             print("loss of {} is {}".format(i, loss_sum / SAVE_POINT))
+            loss_sum = 0
+    torch.save(net.state_dict(), 'Model/checkpoint_final.pt')
     print("-------------------end training.....----------------------")
+
+
+def test():
+    net.load_state_dict(torch.load('Model/checkpoint_final.pt'))
+    net.to(device)
+    input = np.empty((BATCH_SIZE, 1, 512, 64))
+    gnsdr = 0.
+    gsir = 0.
+    gsar = 0.
+    totalLen = 0.
+    for left_origin, right_origin, mix_origin, left_mag, right_mag, mix_mag, max_value, mix_spec_phase in Utils.mir_1k_data_generator(
+            train=False):
+        srcLen = mix_mag.shape[-1]
+        startIndex = 0
+        predict_left = np.zeros((512, srcLen))
+        predict_right = np.zeros((512, srcLen))
+        while startIndex + 64 < srcLen:
+            input[0, 0, :, :] = mix_mag[0:512, startIndex:startIndex + 64]
+            output = net(input)
+            output = output[-1]  # 取最后一个沙漏的输出作为输出
+            if startIndex == 0:
+                predict_left[:, 0, 64] = output[0, 0, :, :]
+                predict_right[:, 0, 64] = output[0, 1, :, :]
+            else:
+                predict_left[:startIndex + 16, startIndex + 48] = output[0, 0, 16:48]
+                predict_right[:startIndex + 16, startIndex + 48] = output[0, 1, 16:48]
+            startIndex += 32
+        input[0, 0, :, :] = mix_mag[0:512, srcLen - 64:srcLen]
+        output = net(input)
+        output = output[-1]
+        length = srcLen - startIndex - 16
+        predict_left[:, startIndex + 16:srcLen] = output[0, 0, :, 64 - length:64]
+        predict_right[:, startIndex + 16:srcLen] = output[0, 1, :, 64 - length:64]
+        predict_left[np.where(predict_left < 0)] = 0
+        predict_right[np.where(predict_right < 0)] = 0
+        predict_left = predict_left * mix_mag[0:512, :] * max_value
+        predict_right = predict_right * mix_mag[0:512, :] * max_value
+        predict_left_wav = Utils.to_wav(predict_left, mix_spec_phase[0:512, 0])
+        predict_right_wav = Utils.to_wav(predict_right, mix_spec_phase[0:512, 0])
+        predict_left_wav = librosa.resample(predict_left_wav, 8000, 16000)
+        predict_right_wav = librosa.resample(predict_right_wav, 8000, 16000)
+        nsdr, sir, sar, lens = Utils.bss_eval(mix_origin, left_origin, right_origin, predict_left_wav,
+                                              predict_right_wav)
+
+        printstr = str(nsdr) + ' ' + str(sir) + ' ' + str(sar)
+        print(printstr)
+
+        totalLen = totalLen + lens
+        gnsdr = gnsdr + nsdr * lens
+        gsir = gsir + sir * lens
+        gsar = gsar + sar * lens
+    print('Final results')
+    # print(totalLen)
+    print('GNSDR [Accompaniments, voice]')
+    print(gnsdr / totalLen)
+    print('GSIR [Accompaniments, voice]')
+    print(gsir / totalLen)
+    print('GSAR [Accompaniments, voice]')
+    print(gsar / totalLen)
 
 
 if __name__ == '__main__':
