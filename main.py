@@ -56,17 +56,12 @@ def train():
         optimizer.zero_grad()
         predict = net(input).to(device)
         loss = judge(input, output, predict)
-        if loss < 0:
-            print("????????????????")
-            ttt = judge(input, output, predict)
-            import pdb
-            pdb.set_trace()
         loss.backward()
         loss_sum += loss
         optimizer.step()
         if (i + 1) % TRAIN_SAVE_POINT == 0:
             torch.save(net.state_dict(), 'Model/checkpoint_{}.pt'.format(i + 1))
-            print("loss of {} is {}".format(i, loss_sum / TRAIN_SAVE_POINT))
+            print("loss of {} is {}".format(i + 1, loss_sum / TRAIN_SAVE_POINT))
             loss_sum = 0
     torch.save(net.state_dict(), 'Model/checkpoint_final.pt')
     print("-------------------end training.....----------------------")
@@ -108,7 +103,6 @@ def test():
         length = srcLen - startIndex - 16
         predict_left[:, startIndex + 16:srcLen] = output[0, 0, :, 64 - length:64]
         predict_right[:, startIndex + 16:srcLen] = output[0, 1, :, 64 - length:64]
-        # print(predict_left)
         predict_left[np.where(predict_left < 0)] = 0
         predict_right[np.where(predict_right < 0)] = 0
         predict_left = predict_left * mix_mag[0:512, :] * max_value
@@ -135,10 +129,10 @@ def test():
                 (gsir / totalLen)[0],
                 (gsar / totalLen)[0]))
             # 顺便把这个输出
-            Utils.write_wav(predict_left_wav, '/Samples/{}_voice_predict.wav'.format(cnt / TEST_STEP))
-            Utils.write_wav(predict_right_wav, '/Samples/{}_accompaniments_predict.wav'.format(cnt / TEST_STEP))
-            Utils.write_wav(left_origin, '/Samples/{}_voice_origin.wav'.format(cnt / TEST_STEP))
-            Utils.write_wav(right_origin, '/Samples/{}_accompaniments_origin.wav'.format(cnt / TEST_STEP))
+            Utils.write_wav(predict_left_wav, 'Samples/{}_voice_predict.wav'.format(cnt // TEST_STEP))
+            Utils.write_wav(predict_right_wav, 'Samples/{}_accompaniments_predict.wav'.format(cnt // TEST_STEP))
+            Utils.write_wav(left_origin, 'Samples/{}_voice_origin.wav'.format(cnt // TEST_STEP))
+            Utils.write_wav(right_origin, 'Samples/{}_accompaniments_origin.wav'.format(cnt // TEST_STEP))
         if cnt == TOTAL_TEST:
             break
     print('人声GNSDR={:.3f} 人声GSIR={:.3f} 人声GSAR={:.3f} 伴奏GNSDR={:.3f} 伴奏GSIR={:.3f} 伴奏GSAR={:.3f}'.format(
