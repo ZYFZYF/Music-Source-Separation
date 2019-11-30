@@ -6,12 +6,15 @@ import tqdm
 import librosa
 import time
 
-MAX_ITERATIONS = 1000  # 进行这么多batch的训练
+MAX_ITERATIONS = 15000  # 进行这么多batch的训练
 BATCH_SIZE = 4  # 每个batch的大小
-STACKED_LEVEL = 2  # 堆叠沙漏网络的层数
+NUM_STACKS = 4  # 堆叠沙漏网络的层数
+FIRST_DEPTH_CHANNELS = 64  # 沙漏网络第一层的通道数
+OUTPUT_CHANNELS = 2  # 整个网络输出的通道数
+NEXT_DEPTH_ADD_CHANNELS = 64  # 沙漏网络中每下一层增加的通道数
 TRAIN_SAVE_POINT = 50  # 保存点
 TEST_STEP = 20  # 测试时
-TOTAL_TEST = 100
+TOTAL_TEST = 800
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print('train device: {}'.format(device))
@@ -19,12 +22,13 @@ print('train device: {}'.format(device))
 
 def judge(input, output, predict):
     # 每个堆叠沙漏网络的输出的loss和
-    return sum(torch.mean(torch.abs(predict[x].mul(input) - output)) for x in range(STACKED_LEVEL))
+    return sum(torch.mean(torch.abs(predict[x].mul(input) - output)) for x in range(NUM_STACKS))
 
 
 def get_model():
-    return Model.StackedHourglassNet(num_stacks=2, first_depth_channels=64, output_channels=2,
-                                     next_depth_add_channels=64)
+    return Model.StackedHourglassNet(num_stacks=NUM_STACKS, first_depth_channels=FIRST_DEPTH_CHANNELS,
+                                     output_channels=OUTPUT_CHANNELS,
+                                     next_depth_add_channels=NEXT_DEPTH_ADD_CHANNELS)
 
 
 def get_parameter_number(net):
@@ -47,7 +51,7 @@ def train():
         cnt += 1
 
     print("-------------------train data loaded----------------------")
-    optimizer = torch.optim.Adam(net.parameters(), lr=0.1)
+    optimizer = torch.optim.Adam(net.parameters(), lr=0.01)
     loss_sum = torch.empty(1).to(device)
     print("-------------------begin training...----------------------")
     for i in tqdm.tqdm(range(MAX_ITERATIONS)):
