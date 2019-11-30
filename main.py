@@ -5,6 +5,7 @@ import numpy as np
 import tqdm
 import librosa
 import time
+import os
 
 MAX_ITERATIONS = 15000  # 进行这么多batch的训练
 BATCH_SIZE = 4  # 每个batch的大小
@@ -173,5 +174,13 @@ def test():
 
 
 if __name__ == '__main__':
+    # 先把需要的文件夹建出来
+    if not os.path.exists('Samples'):
+        os.mkdir('Samples')
+    if not os.path.exists('Model'):
+        os.mkdir('Model')
+    if not os.path.exists('Dataset/MIR-1K/Wavfile/'):
+        print('Dataset is not prepared')
+        exit(0)
     train()
     test()
