@@ -58,11 +58,13 @@ def train():
         optimizer.zero_grad()
         predict = net(input).to(device)
         loss = judge(input, output, predict)
+        if loss < 0:
+            print("????????????????")
         loss.backward()
         loss_sum += loss
         optimizer.step()
-        if i % TRAIN_SAVE_POINT == TRAIN_SAVE_POINT - 1:
-            torch.save(net.state_dict(), 'Model/checkpoint_{}.pt'.format(i))
+        if (i + 1) % TRAIN_SAVE_POINT == 0:
+            torch.save(net.state_dict(), 'Model/checkpoint_{}.pt'.format(i + 1))
             print("loss of {} is {}".format(i, loss_sum / TRAIN_SAVE_POINT))
             loss_sum = 0
     torch.save(net.state_dict(), 'Model/checkpoint_final.pt')
@@ -124,18 +126,20 @@ def test():
         pbar.update(1)
         cnt += 1
         if cnt % TEST_STEP == 0:
-            print('人声GNSDR={} 人声GSIR={} 人声GSAR={} 伴奏GNSDR={} 伴奏GSIR={} 伴奏GSAR={}'.format((gnsdr / totalLen)[1],
-                                                                                         (gnsdr / totalLen)[0],
-                                                                                         (gsir / totalLen)[1],
-                                                                                         (gsir / totalLen)[0],
-                                                                                         (gsar / totalLen)[1],
-                                                                                         (gsar / totalLen)[0]))
-    print('人声GNSDR={} 人声GSIR={} 人声GSAR={} 伴奏GNSDR={} 伴奏GSIR={} 伴奏GSAR={}'.format((gnsdr / totalLen)[1],
-                                                                                 (gnsdr / totalLen)[0],
-                                                                                 (gsir / totalLen)[1],
-                                                                                 (gsir / totalLen)[0],
-                                                                                 (gsar / totalLen)[1],
-                                                                                 (gsar / totalLen)[0]))
+            print('人声GNSDR={:.3f} 人声GSIR={:.3f} 人声GSAR={:.3f} 伴奏GNSDR={:.3f} 伴奏GSIR={:.3f} 伴奏GSAR={:.3f}'.format(
+                (gnsdr / totalLen)[1],
+                (gsir / totalLen)[1],
+                (gsar / totalLen)[1],
+                (gnsdr / totalLen)[0],
+                (gsir / totalLen)[0],
+                (gsar / totalLen)[0]))
+    print('人声GNSDR={:.3f} 人声GSIR={:.3f} 人声GSAR={:.3f} 伴奏GNSDR={:.3f} 伴奏GSIR={:.3f} 伴奏GSAR={:.3f}'.format(
+        (gnsdr / totalLen)[1],
+        (gsir / totalLen)[1],
+        (gsar / totalLen)[1],
+        (gnsdr / totalLen)[0],
+        (gsir / totalLen)[0],
+        (gsar / totalLen)[0]))
 
 
 if __name__ == '__main__':
