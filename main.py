@@ -5,7 +5,7 @@ import numpy as np
 import tqdm
 import librosa
 
-MAX_ITERATIONS = 100  # 进行这么多batch的训练
+MAX_ITERATIONS = 10  # 进行这么多batch的训练
 BATCH_SIZE = 4  # 每个batch的大小
 STACKED_LEVEL = 2  # 堆叠沙漏网络的层数
 SAVE_POINT = 1  # 保存点
@@ -15,18 +15,21 @@ print('train device: {}'.format(device))
 
 
 def judge(input, output, predict):
-    los = torch.empty(1)
+    los = torch.empty(1).to(device)
     # 每个堆叠沙漏网络的输出的loss和
     for j in range(STACKED_LEVEL):
         los += torch.mean(torch.abs(predict[j].mul(input) - output))
     return los
 
 
-# TODO 这里设成输出为2通道，可以尝试输出一通道效果如何，同时也得更改loss计算方式
-net = Model.StackedHourglassNet(num_stacks=2, first_depth_channels=64, output_channels=2, next_depth_add_channels=0)
+def get_model():
+    return Model.StackedHourglassNet(num_stacks=2, first_depth_channels=64, output_channels=2,
+                                     next_depth_add_channels=0)
 
 
 def train():
+    # TODO 这里设成输出为2通道，可以尝试输出一通道效果如何，同时也得更改loss计算方式
+    net = get_model()
     net.to(device)
     cnt = 0
     train_data = []
@@ -37,7 +40,7 @@ def train():
             break
     print("-------------------train data loaded----------------------")
     optimizer = torch.optim.Adam(net.parameters(), lr=0.1)
-    loss_sum = torch.empty(1)
+    loss_sum = torch.empty(1).to(device)
     print("-------------------begin training...----------------------")
     for i in tqdm.tqdm(range(MAX_ITERATIONS)):
         input = torch.randn(BATCH_SIZE, 1, 512, 64)
@@ -53,7 +56,7 @@ def train():
             input = input.to(device)
             output = output.to(device)
         optimizer.zero_grad()
-        predict = net(input)
+        predict = net(input).to(device)
         loss = judge(input, output, predict)
         loss.backward()
         loss_sum += loss
@@ -67,9 +70,11 @@ def train():
 
 
 def test():
+    # TODO 这里设成输出为2通道，可以尝试输出一通道效果如何，同时也得更改loss计算方式
+    net = get_model()
     net.load_state_dict(torch.load('Model/checkpoint_final.pt'))
     net.to(device)
-    input = np.empty((BATCH_SIZE, 1, 512, 64))
+    input = np.empty((BATCH_SIZE, 1, 512, 64), dtype=np.float32)
     gnsdr = 0.
     gsir = 0.
     gsar = 0.
@@ -78,22 +83,22 @@ def test():
             train=False):
         srcLen = mix_mag.shape[-1]
         startIndex = 0
-        predict_left = np.zeros((512, srcLen))
-        predict_right = np.zeros((512, srcLen))
+        predict_left = np.zeros((512, srcLen), dtype=np.float32)
+        predict_right = np.zeros((512, srcLen), dtype=np.float32)
         while startIndex + 64 < srcLen:
             input[0, 0, :, :] = mix_mag[0:512, startIndex:startIndex + 64]
-            output = net(input)
-            output = output[-1]  # 取最后一个沙漏的输出作为输出
+            output = net(torch.from_numpy(input).to(device))
+            output = output[-1].data.cpu().numpy()  # 取最后一个沙漏的输出作为输出
             if startIndex == 0:
-                predict_left[:, 0, 64] = output[0, 0, :, :]
-                predict_right[:, 0, 64] = output[0, 1, :, :]
+                predict_left[:, 0:64] = output[0, 0, :, :]
+                predict_right[:, 0:64] = output[0, 1, :, :]
             else:
-                predict_left[:startIndex + 16, startIndex + 48] = output[0, 0, 16:48]
-                predict_right[:startIndex + 16, startIndex + 48] = output[0, 1, 16:48]
+                predict_left[:, startIndex + 16: startIndex + 48] = output[0, 0, :, 16:48]
+                predict_right[:, startIndex + 16:startIndex + 48] = output[0, 1, :, 16:48]
             startIndex += 32
         input[0, 0, :, :] = mix_mag[0:512, srcLen - 64:srcLen]
-        output = net(input)
-        output = output[-1]
+        output = net(torch.from_numpy(input).to(device))
+        output = output[-1].data.cpu().numpy()
         length = srcLen - startIndex - 16
         predict_left[:, startIndex + 16:srcLen] = output[0, 0, :, 64 - length:64]
         predict_right[:, startIndex + 16:srcLen] = output[0, 1, :, 64 - length:64]
@@ -101,10 +106,11 @@ def test():
         predict_right[np.where(predict_right < 0)] = 0
         predict_left = predict_left * mix_mag[0:512, :] * max_value
         predict_right = predict_right * mix_mag[0:512, :] * max_value
-        predict_left_wav = Utils.to_wav(predict_left, mix_spec_phase[0:512, 0])
-        predict_right_wav = Utils.to_wav(predict_right, mix_spec_phase[0:512, 0])
+        predict_left_wav = Utils.to_wav(predict_left, mix_spec_phase[0:512, :])
+        predict_right_wav = Utils.to_wav(predict_right, mix_spec_phase[0:512, :])
         predict_left_wav = librosa.resample(predict_left_wav, 8000, 16000)
         predict_right_wav = librosa.resample(predict_right_wav, 8000, 16000)
+        print(np.sum(predict_left_wav), np.sum(predict_right_wav))
         nsdr, sir, sar, lens = Utils.bss_eval(mix_origin, left_origin, right_origin, predict_left_wav,
                                               predict_right_wav)
 
@@ -127,3 +133,4 @@ def test():
 
 if __name__ == '__main__':
     train()
+    test()
