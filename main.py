@@ -5,10 +5,10 @@ import numpy as np
 import tqdm
 import librosa
 
-MAX_ITERATIONS = 10  # 进行这么多batch的训练
+MAX_ITERATIONS = 1000  # 进行这么多batch的训练
 BATCH_SIZE = 4  # 每个batch的大小
 STACKED_LEVEL = 2  # 堆叠沙漏网络的层数
-SAVE_POINT = 1  # 保存点
+SAVE_POINT = 50  # 保存点
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print('train device: {}'.format(device))
@@ -36,8 +36,7 @@ def train():
     for _, _, _, left_mag, right_mag, mixed_mag, _, _ in Utils.mir_1k_data_generator(train=True):
         train_data.append((left_mag, right_mag, mixed_mag))
         cnt += 1
-        if cnt == 10:
-            break
+
     print("-------------------train data loaded----------------------")
     optimizer = torch.optim.Adam(net.parameters(), lr=0.1)
     loss_sum = torch.empty(1).to(device)
@@ -70,6 +69,7 @@ def train():
 
 
 def test():
+    print('-------------------begin testing.......-------------------')
     # TODO 这里设成输出为2通道，可以尝试输出一通道效果如何，同时也得更改loss计算方式
     net = get_model()
     net.load_state_dict(torch.load('Model/checkpoint_final.pt'))
@@ -79,6 +79,7 @@ def test():
     gsir = 0.
     gsar = 0.
     totalLen = 0.
+    pbar = tqdm.tqdm(total=825)
     for left_origin, right_origin, mix_origin, left_mag, right_mag, mix_mag, max_value, mix_spec_phase in Utils.mir_1k_data_generator(
             train=False):
         srcLen = mix_mag.shape[-1]
@@ -102,6 +103,7 @@ def test():
         length = srcLen - startIndex - 16
         predict_left[:, startIndex + 16:srcLen] = output[0, 0, :, 64 - length:64]
         predict_right[:, startIndex + 16:srcLen] = output[0, 1, :, 64 - length:64]
+        # print(predict_left)
         predict_left[np.where(predict_left < 0)] = 0
         predict_right[np.where(predict_right < 0)] = 0
         predict_left = predict_left * mix_mag[0:512, :] * max_value
@@ -110,7 +112,6 @@ def test():
         predict_right_wav = Utils.to_wav(predict_right, mix_spec_phase[0:512, :])
         predict_left_wav = librosa.resample(predict_left_wav, 8000, 16000)
         predict_right_wav = librosa.resample(predict_right_wav, 8000, 16000)
-        print(np.sum(predict_left_wav), np.sum(predict_right_wav))
         nsdr, sir, sar, lens = Utils.bss_eval(mix_origin, left_origin, right_origin, predict_left_wav,
                                               predict_right_wav)
 
@@ -121,6 +122,8 @@ def test():
         gnsdr = gnsdr + nsdr * lens
         gsir = gsir + sir * lens
         gsar = gsar + sar * lens
+        pbar.update(1)
+        print(gnsdr / totalLen, gsir / totalLen, gsar / totalLen)
     print('Final results')
     # print(totalLen)
     print('GNSDR [Accompaniments, voice]')
@@ -129,6 +132,7 @@ def test():
     print(gsir / totalLen)
     print('GSAR [Accompaniments, voice]')
     print(gsar / totalLen)
+    print('-------------------end testing.......-------------------')
 
 
 if __name__ == '__main__':
