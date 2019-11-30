@@ -4,6 +4,7 @@ import torch
 import numpy as np
 import tqdm
 import librosa
+import time
 
 MAX_ITERATIONS = 1000  # 进行这么多batch的训练
 BATCH_SIZE = 4  # 每个batch的大小
@@ -23,7 +24,7 @@ def judge(input, output, predict):
 
 def get_model():
     return Model.StackedHourglassNet(num_stacks=2, first_depth_channels=64, output_channels=2,
-                                     next_depth_add_channels=0)
+                                     next_depth_add_channels=64)
 
 
 def get_parameter_number(net):
@@ -96,20 +97,20 @@ def test():
         predict_left = np.zeros((512, srcLen), dtype=np.float32)
         predict_right = np.zeros((512, srcLen), dtype=np.float32)
         # 除了第一次和最后一次，其余计算时都要用上上下文的信息，然后只提取中间长度为32的结果作为预测的结果
+        start = time.time()
         while startIndex + 64 < srcLen:
             # 四个同时算，理论上能4倍加速
-            if startIndex and startIndex + 128 + 64 < srcLen:
+            if startIndex and startIndex + 96 + 64 < srcLen:
                 for i in range(4):
-                    input[i, 0, :, :] = mix_mag[0:512, startIndex + i * 32, startIndex + i * 32 + 64]
-                output = net(torch.from_numpy(input).to(device))
+                    input[i, 0, :, :] = mix_mag[0:512, startIndex + i * 32:startIndex + i * 32 + 64]
+                output = net(torch.from_numpy(input).to(device))[-1].data.cpu().numpy()  # 取最后一个沙漏的输出作为输出，并且要拷贝到内存里
                 for i in range(4):
                     predict_left[:, startIndex + i * 32 + 16: startIndex + i * 32 + 48] = output[i, 0, :, 16:48]
-                    predict_right[:, startIndex + i * 32 + 16:startIndex + i * 32 + 48] = output[i, 1, :, 16:48]
-                startIndex += 128 + 32
+                    predict_right[:, startIndex + i * 32 + 16: startIndex + i * 32 + 48] = output[i, 1, :, 16:48]
+                startIndex += 128
             else:
                 input[0, 0, :, :] = mix_mag[0:512, startIndex:startIndex + 64]
-                output = net(torch.from_numpy(input).to(device))
-                output = output[-1].data.cpu().numpy()  # 取最后一个沙漏的输出作为输出
+                output = net(torch.from_numpy(input).to(device))[-1].data.cpu().numpy()  # 取最后一个沙漏的输出作为输出，并且要拷贝到内存里
                 if startIndex == 0:
                     predict_left[:, 0:64] = output[0, 0, :, :]
                     predict_right[:, 0:64] = output[0, 1, :, :]
@@ -118,11 +119,13 @@ def test():
                     predict_right[:, startIndex + 16:startIndex + 48] = output[0, 1, :, 16:48]
                 startIndex += 32
         input[0, 0, :, :] = mix_mag[0:512, srcLen - 64:srcLen]
-        output = net(torch.from_numpy(input).to(device))
-        output = output[-1].data.cpu().numpy()
+        output = net(torch.from_numpy(input).to(device))[-1].data.cpu().numpy()  # 取最后一个沙漏的输出作为输出，并且要拷贝到内存里
         length = srcLen - startIndex - 16
         predict_left[:, startIndex + 16:srcLen] = output[0, 0, :, 64 - length:64]
         predict_right[:, startIndex + 16:srcLen] = output[0, 1, :, 64 - length:64]
+        # 有NaN的话<号以及librosa会出问题
+        np.nan_to_num(predict_left)
+        np.nan_to_num(predict_right)
         predict_left[np.where(predict_left < 0)] = 0
         predict_right[np.where(predict_right < 0)] = 0
         predict_left = predict_left * mix_mag[0:512, :] * max_value
@@ -133,21 +136,21 @@ def test():
         predict_right_wav = librosa.resample(predict_right_wav, 8000, 16000)
         nsdr, sir, sar, lens = Utils.bss_eval(mix_origin, left_origin, right_origin, predict_left_wav,
                                               predict_right_wav)
-
         totalLen = totalLen + lens
         gnsdr = gnsdr + nsdr * lens
         gsir = gsir + sir * lens
         gsar = gsar + sar * lens
+        # print(nsdr, sir, sar, lens)
         pbar.update(1)
         cnt += 1
         if cnt % TEST_STEP == 0:
             print('人声GNSDR={:.3f} 人声GSIR={:.3f} 人声GSAR={:.3f} 伴奏GNSDR={:.3f} 伴奏GSIR={:.3f} 伴奏GSAR={:.3f}'.format(
-                (gnsdr / totalLen)[0],
-                (gsir / totalLen)[0],
-                (gsar / totalLen)[0],
-                (gnsdr / totalLen)[1],
-                (gsir / totalLen)[1],
-                (gsar / totalLen)[1]))
+                (gnsdr / totalLen)[0][0],
+                (gsir / totalLen)[0][0],
+                (gsar / totalLen)[0][0],
+                (gnsdr / totalLen)[1][0],
+                (gsir / totalLen)[1][0],
+                (gsar / totalLen)[1][0]))
             # 顺便把这个输出
             Utils.write_wav(predict_left_wav, 'Samples/{}_accompaniments_predict.wav'.format(cnt // TEST_STEP))
             Utils.write_wav(predict_right_wav, 'Samples/{}_voice_predict.wav'.format(cnt // TEST_STEP))
@@ -157,12 +160,12 @@ def test():
         if cnt == TOTAL_TEST:
             break
     print('人声GNSDR={:.3f} 人声GSIR={:.3f} 人声GSAR={:.3f} 伴奏GNSDR={:.3f} 伴奏GSIR={:.3f} 伴奏GSAR={:.3f}'.format(
-        (gnsdr / totalLen)[0],
-        (gsir / totalLen)[0],
-        (gsar / totalLen)[0],
-        (gnsdr / totalLen)[1],
-        (gsir / totalLen)[1],
-        (gsar / totalLen)[1]))
+        (gnsdr / totalLen)[0][0],
+        (gsir / totalLen)[0][0],
+        (gsar / totalLen)[0][0],
+        (gnsdr / totalLen)[1][0],
+        (gsir / totalLen)[1][0],
+        (gsar / totalLen)[1][0]))
 
 
 if __name__ == '__main__':
