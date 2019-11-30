@@ -26,6 +26,15 @@ def get_model():
                                      next_depth_add_channels=0)
 
 
+def get_parameter_number(net):
+    total_num = sum(p.numel() for p in net.parameters())
+    trainable_num = sum(p.numel() for p in net.parameters() if p.requires_grad)
+    return {'Total': total_num, 'Trainable': trainable_num}
+
+
+print('the number of parameters in model: {}'.format(get_parameter_number(get_model())))
+
+
 def train():
     # TODO 这里设成输出为2通道，可以尝试输出一通道效果如何，同时也得更改loss计算方式
     net = get_model()
