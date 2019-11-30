@@ -43,7 +43,7 @@ def to_wav(mag, phase, len_hop=256):
 
 
 def write_wav(data, path):
-    soundfile.write(path, data, 8000, format='wav', subtype='PCM_16')
+    soundfile.write(path, data, 16000, format='wav', subtype='PCM_16')
 
 
 def bss_eval(mixed_wav, src1_wav, src2_wav, pred_src1_wav, pred_src2_wav):

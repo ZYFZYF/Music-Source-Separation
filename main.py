@@ -122,26 +122,27 @@ def test():
         cnt += 1
         if cnt % TEST_STEP == 0:
             print('人声GNSDR={:.3f} 人声GSIR={:.3f} 人声GSAR={:.3f} 伴奏GNSDR={:.3f} 伴奏GSIR={:.3f} 伴奏GSAR={:.3f}'.format(
-                (gnsdr / totalLen)[1],
-                (gsir / totalLen)[1],
-                (gsar / totalLen)[1],
                 (gnsdr / totalLen)[0],
                 (gsir / totalLen)[0],
-                (gsar / totalLen)[0]))
+                (gsar / totalLen)[0],
+                (gnsdr / totalLen)[1],
+                (gsir / totalLen)[1],
+                (gsar / totalLen)[1]))
             # 顺便把这个输出
-            Utils.write_wav(predict_left_wav, 'Samples/{}_voice_predict.wav'.format(cnt // TEST_STEP))
-            Utils.write_wav(predict_right_wav, 'Samples/{}_accompaniments_predict.wav'.format(cnt // TEST_STEP))
-            Utils.write_wav(left_origin, 'Samples/{}_voice_origin.wav'.format(cnt // TEST_STEP))
-            Utils.write_wav(right_origin, 'Samples/{}_accompaniments_origin.wav'.format(cnt // TEST_STEP))
+            Utils.write_wav(predict_left_wav, 'Samples/{}_accompaniments_predict.wav'.format(cnt // TEST_STEP))
+            Utils.write_wav(predict_right_wav, 'Samples/{}_voice_predict.wav'.format(cnt // TEST_STEP))
+            Utils.write_wav(left_origin, 'Samples/{}_accompaniments_origin.wav'.format(cnt // TEST_STEP))
+            Utils.write_wav(right_origin, 'Samples/{}_voice_origin.wav'.format(cnt // TEST_STEP))
+            Utils.write_wav(mix_origin, 'Samples/{}_mixed.wav'.format(cnt // TEST_STEP))
         if cnt == TOTAL_TEST:
             break
     print('人声GNSDR={:.3f} 人声GSIR={:.3f} 人声GSAR={:.3f} 伴奏GNSDR={:.3f} 伴奏GSIR={:.3f} 伴奏GSAR={:.3f}'.format(
-        (gnsdr / totalLen)[1],
-        (gsir / totalLen)[1],
-        (gsar / totalLen)[1],
         (gnsdr / totalLen)[0],
         (gsir / totalLen)[0],
-        (gsar / totalLen)[0]))
+        (gsar / totalLen)[0],
+        (gnsdr / totalLen)[1],
+        (gsir / totalLen)[1],
+        (gsar / totalLen)[1]))
 
 
 if __name__ == '__main__':
