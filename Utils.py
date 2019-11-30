@@ -10,7 +10,7 @@ def mir_1k_data_generator(train):
     for wav in glob.glob('Dataset/MIR-1K/Wavfile/*.wav'):
         filename = os.path.split(wav)[1]
         if (filename.startswith('abjones') or filename.startswith('amy')) == train:
-            origin_source, origin_sr = librosa.load(wav, sr=None, mono=False)  # TODO 这里的采样率，该文中用了8k，实际上原音频是16k
+            origin_source, origin_sr = librosa.load(wav, sr=None, mono=False)  # TODO 这里的采样率，该文中用了8k，实际上原音频是16k，能不能不重采样
             resample_source = librosa.resample(origin_source, origin_sr, 8000)
             mixed_source_origin = librosa.to_mono(resample_source)
             left_resample_origin = resample_source[0]

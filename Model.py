@@ -52,8 +52,6 @@ class Hourglass(nn.Module):
         self.skip = Conv(channels, channels)
 
     def forward(self, x):
-        # print(self.skip(x).size())
-        # print(self.model(x).size())
         return self.skip(x) + self.model(x)
 
 
