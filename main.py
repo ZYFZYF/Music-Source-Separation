@@ -10,17 +10,15 @@ BATCH_SIZE = 4  # 每个batch的大小
 STACKED_LEVEL = 2  # 堆叠沙漏网络的层数
 TRAIN_SAVE_POINT = 50  # 保存点
 TEST_STEP = 20  # 测试时
+TOTAL_TEST = 100
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print('train device: {}'.format(device))
 
 
 def judge(input, output, predict):
-    los = torch.empty(1).to(device)
     # 每个堆叠沙漏网络的输出的loss和
-    for j in range(STACKED_LEVEL):
-        los += torch.mean(torch.abs(predict[j].mul(input) - output))
-    return los
+    return sum(torch.mean(torch.abs(predict[x].mul(input) - output)) for x in range(STACKED_LEVEL))
 
 
 def get_model():
@@ -60,6 +58,9 @@ def train():
         loss = judge(input, output, predict)
         if loss < 0:
             print("????????????????")
+            ttt = judge(input, output, predict)
+            import pdb
+            pdb.set_trace()
         loss.backward()
         loss_sum += loss
         optimizer.step()
@@ -82,7 +83,7 @@ def test():
     gsir = 0.
     gsar = 0.
     totalLen = 0.
-    pbar = tqdm.tqdm(total=825)
+    pbar = tqdm.tqdm(total=TOTAL_TEST)
     cnt = 0
     for left_origin, right_origin, mix_origin, left_mag, right_mag, mix_mag, max_value, mix_spec_phase in Utils.mir_1k_data_generator(
             train=False):
@@ -133,6 +134,13 @@ def test():
                 (gnsdr / totalLen)[0],
                 (gsir / totalLen)[0],
                 (gsar / totalLen)[0]))
+            # 顺便把这个输出
+            Utils.write_wav(predict_left_wav, '/Samples/{}_voice_predict.wav'.format(cnt / TEST_STEP))
+            Utils.write_wav(predict_right_wav, '/Samples/{}_accompaniments_predict.wav'.format(cnt / TEST_STEP))
+            Utils.write_wav(left_origin, '/Samples/{}_voice_origin.wav'.format(cnt / TEST_STEP))
+            Utils.write_wav(right_origin, '/Samples/{}_accompaniments_origin.wav'.format(cnt / TEST_STEP))
+        if cnt == TOTAL_TEST:
+            break
     print('人声GNSDR={:.3f} 人声GSIR={:.3f} 人声GSAR={:.3f} 伴奏GNSDR={:.3f} 伴奏GSIR={:.3f} 伴奏GSAR={:.3f}'.format(
         (gnsdr / totalLen)[1],
         (gsir / totalLen)[1],
