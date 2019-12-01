@@ -46,14 +46,25 @@ def get_parameter_number(net):
 print('the number of parameters in model: {}'.format(get_parameter_number(get_model())))
 
 
+def get_train_data():
+    cnt = 0
+    train_data = []
+    total_train_num = 0
+    train_num = []
+    for _, _, _, left_mag, right_mag, mixed_mag, _, _ in Utils.mir_1k_data_generator(train=True):
+        train_data.append((left_mag, right_mag, mixed_mag))
+        total_train_num += mixed_mag.shape[-1] - 64
+        train_num.append(mixed_mag.shape[-1] - 64)
+        cnt += 1
+    print(sorted(train_num))
+    print('there are {} songs and {} train data'.format(cnt, total_train_num))
+    return train_data
+
+
 def train():
     net = get_model()
     net.to(device)
-    cnt = 0
-    train_data = []
-    for _, _, _, left_mag, right_mag, mixed_mag, _, _ in Utils.mir_1k_data_generator(train=True):
-        train_data.append((left_mag, right_mag, mixed_mag))
-        cnt += 1
+    train_data = get_train_data()
 
     print("-------------------train data loaded----------------------")
     optimizer = torch.optim.Adam(net.parameters(), lr=0.01)
@@ -90,11 +101,7 @@ def train_continue(model='Model/checkpoint_final.pt', origin_iteration=15000):
     net = get_model()
     net.load_state_dict(torch.load(model))
     net.to(device)
-    cnt = 0
-    train_data = []
-    for _, _, _, left_mag, right_mag, mixed_mag, _, _ in Utils.mir_1k_data_generator(train=True):
-        train_data.append((left_mag, right_mag, mixed_mag))
-        cnt += 1
+    train_data = get_train_data()
 
     print("-------------------train data loaded----------------------")
     optimizer = torch.optim.Adam(net.parameters(), lr=0.01)
@@ -295,8 +302,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
     if args.test:
         test(model=args.model)
-    if args.generate:
+    elif args.generate:
         generate(model=args.model, wav=args.generate)
-    # train()
+    else:
+        train()
     # train_continue()
     # test()
