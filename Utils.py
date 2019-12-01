@@ -34,6 +34,20 @@ def mir_1k_data_generator(train):
                 origin_source), left_source_magnitude_spectrum, right_source_magnitude_spectrum, mixed_source_magnitude_spectrum, max_value, mixed_spec_phase
 
 
+def load_wav(wav):
+    origin_source, origin_sr = librosa.load(wav, sr=None, mono=False)
+    resample_source = librosa.resample(origin_source, origin_sr, 8000)
+    mixed_source_origin = librosa.to_mono(resample_source)
+    mixed_source_magnitude_spectrum = np.abs(to_spectrum(mixed_source_origin))
+
+    max_value = np.max(mixed_source_magnitude_spectrum)
+    mixed_source_magnitude_spectrum = mixed_source_magnitude_spectrum / max_value
+    # TODO 原文只用了幅度来做，能不能把相位也加进来
+    mixed_spec_phase = np.angle(to_spectrum(mixed_source_origin))
+
+    return mixed_source_magnitude_spectrum, max_value, mixed_spec_phase
+
+
 def to_spectrum(wav, window_size=1024, hop_size=256):
     return librosa.stft(wav, n_fft=window_size, hop_length=hop_size)
 
@@ -61,6 +75,13 @@ def bss_eval(mixed_wav, src1_wav, src2_wav, pred_src1_wav, pred_src2_wav):
     return nsdr, sir, sar, len
 
 
+def get_filename_from_path(path):
+    return os.path.splitext(os.path.split(path)[1])[0]
+
+
 if __name__ == "__main__":
-    for x, y, z, w, u, v in mir_1k_data_generator(train=True):
-        print(len(x), len(y), len(z))
+    # for x, y, z, w, u, v in mir_1k_data_generator(train=True):
+    #     print(len(x), len(y), len(z))
+    print(get_filename_from_path('D:/qaq/main.py'))
+    print(get_filename_from_path('D:/qaq/main'))
+    print(get_filename_from_path('main.py'))

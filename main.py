@@ -6,6 +6,7 @@ import tqdm
 import librosa
 import time
 import os
+import argparse
 
 MAX_ITERATIONS = 15000  # 进行这么多batch的训练
 BATCH_SIZE = 4  # 每个batch的大小
@@ -132,45 +133,45 @@ def test(model='Model/checkpoint_final.pt'):
     net.load_state_dict(torch.load(model))
     net.to(device)
     input = np.empty((BATCH_SIZE, 1, 512, 64), dtype=np.float32)
-    gnsdr = 0.
-    gsir = 0.
-    gsar = 0.
-    totalLen = 0.
-    pbar = tqdm.tqdm(total=TOTAL_TEST)
+    global_normalized_sdr = 0.
+    global_sir = 0.
+    global_sar = 0.
+    total_length = 0.
+    progress_bar = tqdm.tqdm(total=TOTAL_TEST)
     cnt = 0
     for left_origin, right_origin, mix_origin, left_mag, right_mag, mix_mag, max_value, mix_spec_phase in Utils.mir_1k_data_generator(
             train=False):
-        srcLen = mix_mag.shape[-1]
-        startIndex = 0
-        predict_left = np.zeros((512, srcLen), dtype=np.float32)
-        predict_right = np.zeros((512, srcLen), dtype=np.float32)
+        src_length = mix_mag.shape[-1]
+        start_index = 0
+        predict_left = np.zeros((512, src_length), dtype=np.float32)
+        predict_right = np.zeros((512, src_length), dtype=np.float32)
         # 除了第一次和最后一次，其余计算时都要用上上下文的信息，然后只提取中间长度为32的结果作为预测的结果
         start = time.time()
-        while startIndex + 64 < srcLen:
+        while start_index + 64 < src_length:
             # 四个同时算，理论上能4倍加速
-            if startIndex and startIndex + 96 + 64 < srcLen:
+            if start_index and start_index + 96 + 64 < src_length:
                 for i in range(4):
-                    input[i, 0, :, :] = mix_mag[0:512, startIndex + i * 32:startIndex + i * 32 + 64]
+                    input[i, 0, :, :] = mix_mag[0:512, start_index + i * 32:start_index + i * 32 + 64]
                 output = net(torch.from_numpy(input).to(device))[-1].data.cpu().numpy()  # 取最后一个沙漏的输出作为输出，并且要拷贝到内存里
                 for i in range(4):
-                    predict_left[:, startIndex + i * 32 + 16: startIndex + i * 32 + 48] = output[i, 0, :, 16:48]
-                    predict_right[:, startIndex + i * 32 + 16: startIndex + i * 32 + 48] = output[i, 1, :, 16:48]
-                startIndex += 128
+                    predict_left[:, start_index + i * 32 + 16: start_index + i * 32 + 48] = output[i, 0, :, 16:48]
+                    predict_right[:, start_index + i * 32 + 16: start_index + i * 32 + 48] = output[i, 1, :, 16:48]
+                start_index += 128
             else:
-                input[0, 0, :, :] = mix_mag[0:512, startIndex:startIndex + 64]
+                input[0, 0, :, :] = mix_mag[0:512, start_index:start_index + 64]
                 output = net(torch.from_numpy(input).to(device))[-1].data.cpu().numpy()  # 取最后一个沙漏的输出作为输出，并且要拷贝到内存里
-                if startIndex == 0:
+                if start_index == 0:
                     predict_left[:, 0:64] = output[0, 0, :, :]
                     predict_right[:, 0:64] = output[0, 1, :, :]
                 else:
-                    predict_left[:, startIndex + 16: startIndex + 48] = output[0, 0, :, 16:48]
-                    predict_right[:, startIndex + 16:startIndex + 48] = output[0, 1, :, 16:48]
-                startIndex += 32
-        input[0, 0, :, :] = mix_mag[0:512, srcLen - 64:srcLen]
+                    predict_left[:, start_index + 16: start_index + 48] = output[0, 0, :, 16:48]
+                    predict_right[:, start_index + 16:start_index + 48] = output[0, 1, :, 16:48]
+                start_index += 32
+        input[0, 0, :, :] = mix_mag[0:512, src_length - 64:src_length]
         output = net(torch.from_numpy(input).to(device))[-1].data.cpu().numpy()  # 取最后一个沙漏的输出作为输出，并且要拷贝到内存里
-        length = srcLen - startIndex - 16
-        predict_left[:, startIndex + 16:srcLen] = output[0, 0, :, 64 - length:64]
-        predict_right[:, startIndex + 16:srcLen] = output[0, 1, :, 64 - length:64]
+        length = src_length - start_index - 16
+        predict_left[:, start_index + 16:src_length] = output[0, 0, :, 64 - length:64]
+        predict_right[:, start_index + 16:src_length] = output[0, 1, :, 64 - length:64]
         # 有NaN的话<号以及librosa会出问题
         np.nan_to_num(predict_left)
         np.nan_to_num(predict_right)
@@ -184,20 +185,20 @@ def test(model='Model/checkpoint_final.pt'):
         predict_right_wav = librosa.resample(predict_right_wav, 8000, 16000)
         nsdr, sir, sar, lens = Utils.bss_eval(mix_origin, left_origin, right_origin, predict_left_wav,
                                               predict_right_wav)
-        totalLen = totalLen + lens
-        gnsdr = gnsdr + nsdr * lens
-        gsir = gsir + sir * lens
-        gsar = gsar + sar * lens
-        pbar.update(1)
+        total_length = total_length + lens
+        global_normalized_sdr = global_normalized_sdr + nsdr * lens
+        global_sir = global_sir + sir * lens
+        global_sar = global_sar + sar * lens
+        progress_bar.update(1)
         cnt += 1
         if cnt % TEST_STEP == 0:
             print('人声GNSDR={:.3f} 人声GSIR={:.3f} 人声GSAR={:.3f} 伴奏GNSDR={:.3f} 伴奏GSIR={:.3f} 伴奏GSAR={:.3f}'.format(
-                (gnsdr / totalLen)[1][0],
-                (gsir / totalLen)[1][0],
-                (gsar / totalLen)[1][0],
-                (gnsdr / totalLen)[0][0],
-                (gsir / totalLen)[0][0],
-                (gsar / totalLen)[0][0]))
+                (global_normalized_sdr / total_length)[1][0],
+                (global_sir / total_length)[1][0],
+                (global_sar / total_length)[1][0],
+                (global_normalized_sdr / total_length)[0][0],
+                (global_sir / total_length)[0][0],
+                (global_sar / total_length)[0][0]))
             # 顺便把这个输出
             Utils.write_wav(predict_left_wav, 'Samples/{}_accompaniments_predict.wav'.format(cnt // TEST_STEP))
             Utils.write_wav(predict_right_wav, 'Samples/{}_voice_predict.wav'.format(cnt // TEST_STEP))
@@ -207,23 +208,95 @@ def test(model='Model/checkpoint_final.pt'):
         if cnt == TOTAL_TEST:
             break
     print('人声GNSDR={:.3f} 人声GSIR={:.3f} 人声GSAR={:.3f} 伴奏GNSDR={:.3f} 伴奏GSIR={:.3f} 伴奏GSAR={:.3f}'.format(
-        (gnsdr / totalLen)[1][0],
-        (gsir / totalLen)[1][0],
-        (gsar / totalLen)[1][0],
-        (gnsdr / totalLen)[0][0],
-        (gsir / totalLen)[0][0],
-        (gsar / totalLen)[0][0]))
+        (global_normalized_sdr / total_length)[1][0],
+        (global_sir / total_length)[1][0],
+        (global_sar / total_length)[1][0],
+        (global_normalized_sdr / total_length)[0][0],
+        (global_sir / total_length)[0][0],
+        (global_sar / total_length)[0][0]))
+    print('-------------------end testing.......---------------------')
+
+
+def generate(model, wav):
+    print('-------------------begin generating.......-------------------')
+    net = get_model()
+    net.load_state_dict(torch.load(model))
+    net.to(device)
+    input = np.empty((BATCH_SIZE, 1, 512, 64), dtype=np.float32)
+    mix_mag, max_value, mix_spec_phase = Utils.load_wav(wav)
+    src_len = mix_mag.shape[-1]
+    start_index = 0
+    predict_left = np.zeros((512, src_len), dtype=np.float32)
+    predict_right = np.zeros((512, src_len), dtype=np.float32)
+    # 除了第一次和最后一次，其余计算时都要用上上下文的信息，然后只提取中间长度为32的结果作为预测的结果
+    progress_bar = tqdm.tqdm(total=src_len)
+    start = time.time()
+    while start_index + 64 < src_len:
+        # 四个同时算，理论上能4倍加速
+        if start_index and start_index + 96 + 64 < src_len:
+            for i in range(4):
+                input[i, 0, :, :] = mix_mag[0:512, start_index + i * 32:start_index + i * 32 + 64]
+            output = net(torch.from_numpy(input).to(device))[-1].data.cpu().numpy()  # 取最后一个沙漏的输出作为输出，并且要拷贝到内存里
+            for i in range(4):
+                predict_left[:, start_index + i * 32 + 16: start_index + i * 32 + 48] = output[i, 0, :, 16:48]
+                predict_right[:, start_index + i * 32 + 16: start_index + i * 32 + 48] = output[i, 1, :, 16:48]
+            start_index += 128
+            progress_bar.update(128)
+        else:
+            input[0, 0, :, :] = mix_mag[0:512, start_index:start_index + 64]
+            output = net(torch.from_numpy(input).to(device))[-1].data.cpu().numpy()  # 取最后一个沙漏的输出作为输出，并且要拷贝到内存里
+            if start_index == 0:
+                predict_left[:, 0:64] = output[0, 0, :, :]
+                predict_right[:, 0:64] = output[0, 1, :, :]
+                progress_bar.update(64)
+            else:
+                predict_left[:, start_index + 16: start_index + 48] = output[0, 0, :, 16:48]
+                predict_right[:, start_index + 16:start_index + 48] = output[0, 1, :, 16:48]
+                progress_bar.update(32)
+            start_index += 32
+    input[0, 0, :, :] = mix_mag[0:512, src_len - 64:src_len]
+    output = net(torch.from_numpy(input).to(device))[-1].data.cpu().numpy()  # 取最后一个沙漏的输出作为输出，并且要拷贝到内存里
+    length = src_len - start_index - 16
+    predict_left[:, start_index + 16:src_len] = output[0, 0, :, 64 - length:64]
+    predict_right[:, start_index + 16:src_len] = output[0, 1, :, 64 - length:64]
+    progress_bar.update(src_len - start_index + 16)
+    # 有NaN的话<号以及librosa会出问题
+    np.nan_to_num(predict_left)
+    np.nan_to_num(predict_right)
+    predict_left[np.where(predict_left < 0)] = 0
+    predict_right[np.where(predict_right < 0)] = 0
+    predict_left = predict_left * mix_mag[0:512, :] * max_value
+    predict_right = predict_right * mix_mag[0:512, :] * max_value
+    predict_left_wav = Utils.to_wav(predict_left, mix_spec_phase[0:512, :])
+    predict_right_wav = Utils.to_wav(predict_right, mix_spec_phase[0:512, :])
+    # 只恢复到8000采样率，不考虑原采样率（因为差别过大可能会失真）
+    predict_left_wav = librosa.resample(predict_left_wav, 8000, 16000)
+    predict_right_wav = librosa.resample(predict_right_wav, 8000, 16000)
+    # 输出
+    wav_name = Utils.get_filename_from_path(wav)
+    Utils.write_wav(predict_left_wav, 'Output/{}_accompaniments_predict.wav'.format(wav_name))
+    Utils.write_wav(predict_right_wav, 'Output/{}_voice_predict.wav'.format(wav_name))
+    print('-------------------end generating.......-------------------')
 
 
 if __name__ == '__main__':
     # 先把需要的文件夹建出来
-    if not os.path.exists('Samples'):
-        os.mkdir('Samples')
-    if not os.path.exists('Model'):
-        os.mkdir('Model')
+    for dir in ['Samples', 'Model', 'Output']:
+        if not os.path.exists(dir):
+            os.mkdir(dir)
     if not os.path.exists('Dataset/MIR-1K/Wavfile/'):
         print('Dataset is not prepared')
         exit(0)
+    # 设置parser的信息
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--test', type=str, help='test pretrained model')
+    parser.add_argument('--generate', '-g', '-G', type=str, help='execute a single music source separation task')
+    parser.add_argument('--model', '-m', '-M', type=str, help='specify which model to use')
+    args = parser.parse_args()
+    if args.test:
+        test(model=args.model)
+    if args.generate:
+        generate(model=args.model, wav=args.generate)
     # train()
-    train_continue()
-    test()
+    # train_continue()
+    # test()
