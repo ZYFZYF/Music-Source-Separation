@@ -7,18 +7,19 @@ import librosa
 import time
 import os
 
-MAX_ITERATIONS = 1000  # 进行这么多batch的训练
+MAX_ITERATIONS = 15000  # 进行这么多batch的训练
 BATCH_SIZE = 4  # 每个batch的大小
 
 NUM_STACKS = 4  # 堆叠沙漏网络的层数
 FIRST_DEPTH_CHANNELS = 64  # 沙漏网络第一层的通道数
 OUTPUT_CHANNELS = 2  # 整个网络输出的通道数
-NEXT_DEPTH_ADD_CHANNELS = 0  # 沙漏网络中每下一层增加的通道数
+NEXT_DEPTH_ADD_CHANNELS = 64  # 沙漏网络中每下一层增加的通道数
 
 TRAIN_SAVE_POINT = 50  # 保存点
 
 TEST_STEP = 20  # 测试时
-TOTAL_TEST = 800  # 总共测多少条
+TOTAL_TEST = 825
+# 总共测多少条
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print('train device: {}'.format(device))
@@ -55,7 +56,7 @@ def train():
         cnt += 1
 
     print("-------------------train data loaded----------------------")
-    optimizer = torch.optim.Adam(net.parameters(), lr=0.1)
+    optimizer = torch.optim.Adam(net.parameters(), lr=0.01)
     loss_sum = torch.empty(1).to(device)
     print("-------------------begin training...----------------------")
     for i in tqdm.tqdm(range(MAX_ITERATIONS)):
@@ -153,12 +154,12 @@ def test():
         cnt += 1
         if cnt % TEST_STEP == 0:
             print('人声GNSDR={:.3f} 人声GSIR={:.3f} 人声GSAR={:.3f} 伴奏GNSDR={:.3f} 伴奏GSIR={:.3f} 伴奏GSAR={:.3f}'.format(
-                (gnsdr / totalLen)[0][0],
-                (gsir / totalLen)[0][0],
-                (gsar / totalLen)[0][0],
                 (gnsdr / totalLen)[1][0],
                 (gsir / totalLen)[1][0],
-                (gsar / totalLen)[1][0]))
+                (gsar / totalLen)[1][0],
+                (gnsdr / totalLen)[0][0],
+                (gsir / totalLen)[0][0],
+                (gsar / totalLen)[0][0]))
             # 顺便把这个输出
             Utils.write_wav(predict_left_wav, 'Samples/{}_accompaniments_predict.wav'.format(cnt // TEST_STEP))
             Utils.write_wav(predict_right_wav, 'Samples/{}_voice_predict.wav'.format(cnt // TEST_STEP))
@@ -168,12 +169,12 @@ def test():
         if cnt == TOTAL_TEST:
             break
     print('人声GNSDR={:.3f} 人声GSIR={:.3f} 人声GSAR={:.3f} 伴奏GNSDR={:.3f} 伴奏GSIR={:.3f} 伴奏GSAR={:.3f}'.format(
-        (gnsdr / totalLen)[0][0],
-        (gsir / totalLen)[0][0],
-        (gsar / totalLen)[0][0],
         (gnsdr / totalLen)[1][0],
         (gsir / totalLen)[1][0],
-        (gsar / totalLen)[1][0]))
+        (gsar / totalLen)[1][0],
+        (gnsdr / totalLen)[0][0],
+        (gsir / totalLen)[0][0],
+        (gsar / totalLen)[0][0]))
 
 
 if __name__ == '__main__':
@@ -185,5 +186,5 @@ if __name__ == '__main__':
     if not os.path.exists('Dataset/MIR-1K/Wavfile/'):
         print('Dataset is not prepared')
         exit(0)
-    train()
+    # train()
     test()
