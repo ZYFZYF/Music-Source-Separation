@@ -160,6 +160,7 @@ def train_continue(model='Model/checkpoint_23600.pt', origin_iteration=23600):
 
 
 def test(model='Model/checkpoint_final.pt'):
+    print(model)
     print('-------------------begin testing.......-------------------')
     net = get_model()
     net.load_state_dict(torch.load(model))
@@ -232,8 +233,9 @@ def test(model='Model/checkpoint_final.pt'):
                 (global_sir / total_length)[0][0],
                 (global_sar / total_length)[0][0]))
             # 顺便把这个输出
-            Utils.write_wav(predict_left_wav, 'Samples/{}_accompaniments_predict.wav'.format(cnt // TEST_STEP))
-            Utils.write_wav(predict_right_wav, 'Samples/{}_voice_predict.wav'.format(cnt // TEST_STEP))
+            Utils.write_wav(predict_left_wav,
+                            'Samples/{}_accompaniments_predict_on_rent_gpu.wav'.format(cnt // TEST_STEP))
+            Utils.write_wav(predict_right_wav, 'Samples/{}_voice_predict_on_rent_gpu.wav'.format(cnt // TEST_STEP))
             Utils.write_wav(left_origin, 'Samples/{}_accompaniments_origin.wav'.format(cnt // TEST_STEP))
             Utils.write_wav(right_origin, 'Samples/{}_voice_origin.wav'.format(cnt // TEST_STEP))
             Utils.write_wav(mix_origin, 'Samples/{}_mixed.wav'.format(cnt // TEST_STEP))
@@ -250,6 +252,7 @@ def test(model='Model/checkpoint_final.pt'):
 
 
 def generate(model, wav):
+    print('model = {} and wav = {}'.format(model, wav))
     print('-------------------begin generating.......-------------------')
     net = get_model()
     net.load_state_dict(torch.load(model))
@@ -305,9 +308,11 @@ def generate(model, wav):
     predict_left_wav = librosa.resample(predict_left_wav, 8000, 16000)
     predict_right_wav = librosa.resample(predict_right_wav, 8000, 16000)
     # 输出
-    wav_name = Utils.get_filename_from_path(wav)
-    Utils.write_wav(predict_left_wav, 'Output/{}_accompaniments_predict.wav'.format(wav_name))
-    Utils.write_wav(predict_right_wav, 'Output/{}_voice_predict.wav'.format(wav_name))
+    # wav_name = Utils.get_filename_from_path(wav)
+    wav_prefix = os.path.splitext(wav)[0]
+    print(wav_prefix)
+    Utils.write_wav(predict_left_wav, '{}_accompaniments_predict.wav'.format(wav_prefix))
+    Utils.write_wav(predict_right_wav, '{}_voice_predict.wav'.format(wav_prefix))
     print('-------------------end generating.......-------------------')
 
 
@@ -326,7 +331,7 @@ if __name__ == '__main__':
     parser.add_argument('--model', '-m', '-M', type=str, help='specify which model to use')
     args = parser.parse_args()
     if args.test:
-        test(model=args.model)
+        test(model=args.test)
     elif args.generate:
         generate(model=args.model, wav=args.generate)
     else:
