@@ -318,7 +318,7 @@ def generate(model, wav):
 
 if __name__ == '__main__':
     # 先把需要的文件夹建出来
-    for dir in ['Samples', 'Model', 'Output']:
+    for dir in ['Samples', 'Model']:
         if not os.path.exists(dir):
             os.mkdir(dir)
     if not os.path.exists('Dataset/MIR-1K/Wavfile/'):
