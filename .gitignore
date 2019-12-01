@@ -110,3 +110,4 @@ model.pt
 test.wav
 test_accompaniments_predict.wav
 test_voice_predict.wav
+.DS_Store
