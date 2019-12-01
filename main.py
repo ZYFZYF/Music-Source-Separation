@@ -8,7 +8,7 @@ import time
 import os
 import argparse
 
-MAX_ITERATIONS = 15000  # 进行这么多batch的训练
+MAX_ITERATIONS = 150000  # 进行这么多batch的训练
 BATCH_SIZE = 4  # 每个batch的大小
 
 NUM_STACKS = 4  # 堆叠沙漏网络的层数
@@ -51,33 +51,43 @@ def get_train_data():
     train_data = []
     total_train_num = 0
     train_num = []
+    train_pos = []
     for _, _, _, left_mag, right_mag, mixed_mag, _, _ in Utils.mir_1k_data_generator(train=True):
         train_data.append((left_mag, right_mag, mixed_mag))
         total_train_num += mixed_mag.shape[-1] - 64
         train_num.append(mixed_mag.shape[-1] - 64)
+        for i in range(mixed_mag.shape[-1] - 64):
+            train_pos.append((cnt, i))
         cnt += 1
-    print(sorted(train_num))
+    # print(train_pos)
+    # print(len(train_pos))
+    # print(sorted(train_num))
     print('there are {} songs and {} train data'.format(cnt, total_train_num))
-    return train_data
+    return train_data, train_pos
 
 
 def train():
     net = get_model()
     net.to(device)
-    train_data = get_train_data()
+    train_data, train_pos = get_train_data()
 
     print("-------------------train data loaded----------------------")
-    optimizer = torch.optim.Adam(net.parameters(), lr=0.01)
+    optimizer = torch.optim.Adam(net.parameters(), lr=0.001)
     loss_sum = torch.empty(1).to(device)
     print("-------------------begin training...----------------------")
+    min_loss = 100000000
+    loss_not_update_round = 0
+    best_iteration = 0
+    loss_sum_sum = 0
+    min_loss_average = 1000000000
+    loss_average_not_update = 0
     for i in tqdm.tqdm(range(MAX_ITERATIONS)):
         input = torch.empty(BATCH_SIZE, 1, 512, 64)
         output = torch.empty(BATCH_SIZE, 2, 512, 64)
         # 每个batch都是从所有训练数据中随机得到的
         for j in range(BATCH_SIZE):
-            index = np.random.randint(len(train_data))  # np.random.randint()是左闭右开
+            index, start = train_pos[np.random.randint(len(train_pos))]  # np.random.randint()是左闭右开
             left_mag, right_mag, mixed_mag = train_data[index]
-            start = np.random.randint(mixed_mag.shape[-1] - 64)
             input[j, 0, :, :] = torch.from_numpy(mixed_mag[:512, start:start + 64])
             output[j, 0, :, :] = torch.from_numpy(left_mag[:512, start:start + 64])
             output[j, 1, :, :] = torch.from_numpy(right_mag[:512, start:start + 64])
@@ -85,15 +95,34 @@ def train():
             output = output.to(device)
         optimizer.zero_grad()
         predict = net(input).to(device)
+
         loss = judge(input, output, predict)
         loss.backward()
         loss_sum += loss
         optimizer.step()
         if (i + 1) % TRAIN_SAVE_POINT == 0:
             torch.save(net.state_dict(), 'Model/checkpoint_{}.pt'.format(i + 1))
-            print("loss of {} is {}".format(i + 1, loss_sum / TRAIN_SAVE_POINT))
+            loss_sum_sum += loss_sum.item()
+            if loss_sum_sum / (i + 1) < min_loss_average:
+                min_loss_average = loss_sum_sum / (i + 1)
+                loss_average_not_update = 0
+            else:
+                loss_average_not_update += 1
+            if loss_sum / TRAIN_SAVE_POINT < min_loss:
+                min_loss = loss_sum / TRAIN_SAVE_POINT
+                loss_not_update_round = 0
+                best_iteration = i + 1
+            else:
+                loss_not_update_round += 1
+            print(
+                "loss of {} is {}, loss_not_update_round is {}, best_iteration is {}, loss_average is {}, loss_average_not_update_roung is {}".format(
+                    i + 1,
+                    loss_sum / TRAIN_SAVE_POINT,
+                    loss_not_update_round,
+                    best_iteration,
+                    loss_sum_sum / (i + 1), loss_average_not_update))
             loss_sum = 0
-    torch.save(net.state_dict(), 'Model/checkpoint_final.pt')
+    torch.save(net.state_dict(), 'Model/checkpoint_infinite.pt')
     print("-------------------end training.....----------------------")
 
 
@@ -101,7 +130,7 @@ def train_continue(model='Model/checkpoint_23600.pt', origin_iteration=23600):
     net = get_model()
     net.load_state_dict(torch.load(model))
     net.to(device)
-    train_data = get_train_data()
+    train_data, _ = get_train_data()
 
     print("-------------------train data loaded----------------------")
     optimizer = torch.optim.Adam(net.parameters(), lr=0.01)
@@ -160,7 +189,7 @@ def train_continue(model='Model/checkpoint_23600.pt', origin_iteration=23600):
 
 
 def test(model='Model/checkpoint_final.pt'):
-    print(model)
+    print('model is {}'.format(model))
     print('-------------------begin testing.......-------------------')
     net = get_model()
     net.load_state_dict(torch.load(model))
@@ -182,14 +211,14 @@ def test(model='Model/checkpoint_final.pt'):
         start = time.time()
         while start_index + 64 < src_length:
             # 四个同时算，理论上能4倍加速
-            if start_index and start_index + 96 + 64 < src_length:
-                for i in range(4):
+            if start_index and start_index + (BATCH_SIZE - 1) * 32 + 64 < src_length:
+                for i in range(BATCH_SIZE):
                     input[i, 0, :, :] = mix_mag[0:512, start_index + i * 32:start_index + i * 32 + 64]
                 output = net(torch.from_numpy(input).to(device))[-1].data.cpu().numpy()  # 取最后一个沙漏的输出作为输出，并且要拷贝到内存里
-                for i in range(4):
+                for i in range(BATCH_SIZE):
                     predict_left[:, start_index + i * 32 + 16: start_index + i * 32 + 48] = output[i, 0, :, 16:48]
                     predict_right[:, start_index + i * 32 + 16: start_index + i * 32 + 48] = output[i, 1, :, 16:48]
-                start_index += 128
+                start_index += BATCH_SIZE * 32
             else:
                 input[0, 0, :, :] = mix_mag[0:512, start_index:start_index + 64]
                 output = net(torch.from_numpy(input).to(device))[-1].data.cpu().numpy()  # 取最后一个沙漏的输出作为输出，并且要拷贝到内存里
@@ -234,11 +263,11 @@ def test(model='Model/checkpoint_final.pt'):
                 (global_sar / total_length)[0][0]))
             # 顺便把这个输出
             Utils.write_wav(predict_left_wav,
-                            'Samples/{}_accompaniments_predict_on_rent_gpu.wav'.format(cnt // TEST_STEP))
-            Utils.write_wav(predict_right_wav, 'Samples/{}_voice_predict_on_rent_gpu.wav'.format(cnt // TEST_STEP))
-            Utils.write_wav(left_origin, 'Samples/{}_accompaniments_origin.wav'.format(cnt // TEST_STEP))
-            Utils.write_wav(right_origin, 'Samples/{}_voice_origin.wav'.format(cnt // TEST_STEP))
-            Utils.write_wav(mix_origin, 'Samples/{}_mixed.wav'.format(cnt // TEST_STEP))
+                            'Samples/{}_accompaniments_predict_lr0.001_20000.wav'.format(cnt // TEST_STEP))
+            Utils.write_wav(predict_right_wav, 'Samples/{}_voice_lr0.001_20000.wav'.format(cnt // TEST_STEP))
+            # Utils.write_wav(left_origin, 'Samples/{}_accompaniments_origin.wav'.format(cnt // TEST_STEP))
+            # Utils.write_wav(right_origin, 'Samples/{}_voice_origin.wav'.format(cnt // TEST_STEP))
+            # Utils.write_wav(mix_origin, 'Samples/{}_mixed.wav'.format(cnt // TEST_STEP))
         if cnt == TOTAL_TEST:
             break
     print('人声GNSDR={:.3f} 人声GSIR={:.3f} 人声GSAR={:.3f} 伴奏GNSDR={:.3f} 伴奏GSIR={:.3f} 伴奏GSAR={:.3f}'.format(
@@ -268,15 +297,15 @@ def generate(model, wav):
     start = time.time()
     while start_index + 64 < src_len:
         # 四个同时算，理论上能4倍加速
-        if start_index and start_index + 96 + 64 < src_len:
-            for i in range(4):
+        if start_index and start_index + (BATCH_SIZE - 1) * 32 + 64 < src_len:
+            for i in range(BATCH_SIZE):
                 input[i, 0, :, :] = mix_mag[0:512, start_index + i * 32:start_index + i * 32 + 64]
             output = net(torch.from_numpy(input).to(device))[-1].data.cpu().numpy()  # 取最后一个沙漏的输出作为输出，并且要拷贝到内存里
-            for i in range(4):
+            for i in range(BATCH_SIZE):
                 predict_left[:, start_index + i * 32 + 16: start_index + i * 32 + 48] = output[i, 0, :, 16:48]
                 predict_right[:, start_index + i * 32 + 16: start_index + i * 32 + 48] = output[i, 1, :, 16:48]
-            start_index += 128
-            progress_bar.update(128)
+            start_index += BATCH_SIZE * 32
+            progress_bar.update(BATCH_SIZE * 32)
         else:
             input[0, 0, :, :] = mix_mag[0:512, start_index:start_index + 64]
             output = net(torch.from_numpy(input).to(device))[-1].data.cpu().numpy()  # 取最后一个沙漏的输出作为输出，并且要拷贝到内存里
