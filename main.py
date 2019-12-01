@@ -46,7 +46,6 @@ print('the number of parameters in model: {}'.format(get_parameter_number(get_mo
 
 
 def train():
-    # TODO 这里设成输出为2通道，可以尝试输出一通道效果如何，同时也得更改loss计算方式
     net = get_model()
     net.to(device)
     cnt = 0
@@ -88,7 +87,6 @@ def train():
 
 def test():
     print('-------------------begin testing.......-------------------')
-    # TODO 这里设成输出为2通道，可以尝试输出一通道效果如何，同时也得更改loss计算方式
     net = get_model()
     net.load_state_dict(torch.load('Model/checkpoint_final.pt'))
     net.to(device)
