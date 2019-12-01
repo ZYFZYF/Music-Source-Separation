@@ -85,10 +85,51 @@ def train():
     print("-------------------end training.....----------------------")
 
 
-def test():
+def train_continue(model='Model/checkpoint_final.pt', origin_iteration=15000):
+    net = get_model()
+    net.load_state_dict(torch.load(model))
+    net.to(device)
+    cnt = 0
+    train_data = []
+    for _, _, _, left_mag, right_mag, mixed_mag, _, _ in Utils.mir_1k_data_generator(train=True):
+        train_data.append((left_mag, right_mag, mixed_mag))
+        cnt += 1
+
+    print("-------------------train data loaded----------------------")
+    optimizer = torch.optim.Adam(net.parameters(), lr=0.01)
+    loss_sum = torch.empty(1).to(device)
+    print("-------------------begin training...----------------------")
+    for i in tqdm.tqdm(range(MAX_ITERATIONS)):
+        input = torch.empty(BATCH_SIZE, 1, 512, 64)
+        output = torch.empty(BATCH_SIZE, 2, 512, 64)
+        # 每个batch都是从所有训练数据中随机得到的
+        for j in range(BATCH_SIZE):
+            index = np.random.randint(len(train_data))  # np.random.randint()是左闭右开
+            left_mag, right_mag, mixed_mag = train_data[index]
+            start = np.random.randint(mixed_mag.shape[-1] - 64)
+            input[j, 0, :, :] = torch.from_numpy(mixed_mag[:512, start:start + 64])
+            output[j, 0, :, :] = torch.from_numpy(left_mag[:512, start:start + 64])
+            output[j, 1, :, :] = torch.from_numpy(right_mag[:512, start:start + 64])
+            input = input.to(device)
+            output = output.to(device)
+        optimizer.zero_grad()
+        predict = net(input).to(device)
+        loss = judge(input, output, predict)
+        loss.backward()
+        loss_sum += loss
+        optimizer.step()
+        if (i + 1) % TRAIN_SAVE_POINT == 0:
+            torch.save(net.state_dict(), 'Model/checkpoint_{}.pt'.format(i + 1 + origin_iteration))
+            print("loss of {} is {}".format(i + 1 + origin_iteration, loss_sum / TRAIN_SAVE_POINT))
+            loss_sum = 0
+    torch.save(net.state_dict(), 'Model/checkpoint_final_more.pt')
+    print("-------------------end training.....----------------------")
+
+
+def test(model='Model/checkpoint_final.pt'):
     print('-------------------begin testing.......-------------------')
     net = get_model()
-    net.load_state_dict(torch.load('Model/checkpoint_final.pt'))
+    net.load_state_dict(torch.load(model))
     net.to(device)
     input = np.empty((BATCH_SIZE, 1, 512, 64), dtype=np.float32)
     gnsdr = 0.
@@ -147,7 +188,6 @@ def test():
         gnsdr = gnsdr + nsdr * lens
         gsir = gsir + sir * lens
         gsar = gsar + sar * lens
-        # print(nsdr, sir, sar, lens)
         pbar.update(1)
         cnt += 1
         if cnt % TEST_STEP == 0:
@@ -185,4 +225,5 @@ if __name__ == '__main__':
         print('Dataset is not prepared')
         exit(0)
     # train()
+    train_continue()
     test()
