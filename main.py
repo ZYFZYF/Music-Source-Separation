@@ -97,7 +97,7 @@ def train():
     print("-------------------end training.....----------------------")
 
 
-def train_continue(model='Model/checkpoint_final.pt', origin_iteration=15000):
+def train_continue(model='Model/checkpoint_23600.pt', origin_iteration=23600):
     net = get_model()
     net.load_state_dict(torch.load(model))
     net.to(device)
@@ -107,6 +107,12 @@ def train_continue(model='Model/checkpoint_final.pt', origin_iteration=15000):
     optimizer = torch.optim.Adam(net.parameters(), lr=0.01)
     loss_sum = torch.empty(1).to(device)
     print("-------------------begin training...----------------------")
+    min_loss = 100000000
+    loss_not_update_round = 0
+    best_iteration = origin_iteration
+    loss_sum_sum = 0
+    min_loss_average = 1000000000
+    loss_average_not_update = 0
     for i in tqdm.tqdm(range(MAX_ITERATIONS)):
         input = torch.empty(BATCH_SIZE, 1, 512, 64)
         output = torch.empty(BATCH_SIZE, 2, 512, 64)
@@ -128,8 +134,27 @@ def train_continue(model='Model/checkpoint_final.pt', origin_iteration=15000):
         optimizer.step()
         if (i + 1) % TRAIN_SAVE_POINT == 0:
             torch.save(net.state_dict(), 'Model/checkpoint_{}.pt'.format(i + 1 + origin_iteration))
-            print("loss of {} is {}".format(i + 1 + origin_iteration, loss_sum / TRAIN_SAVE_POINT))
+            loss_sum_sum += loss_sum.item()
+            if loss_sum_sum / (i + 1) < min_loss_average:
+                min_loss_average = loss_sum_sum / (i + 1)
+                loss_average_not_update = 0
+            else:
+                loss_average_not_update += 1
+            if loss_sum / TRAIN_SAVE_POINT < min_loss:
+                min_loss = loss_sum / TRAIN_SAVE_POINT
+                loss_not_update_round = 0
+                best_iteration = i + 1 + origin_iteration
+            else:
+                loss_not_update_round += 1
+            print(
+                "loss of {} is {}, loss_not_update_round is {}, best_iteration is {}, loss_average is {}, loss_average_not_update_roung is {}".format(
+                    i + 1 + origin_iteration,
+                    loss_sum / TRAIN_SAVE_POINT,
+                    loss_not_update_round,
+                    best_iteration,
+                    loss_sum_sum / (i + 1), loss_average_not_update))
             loss_sum = 0
+
     torch.save(net.state_dict(), 'Model/checkpoint_final_more.pt')
     print("-------------------end training.....----------------------")
 
@@ -307,4 +332,3 @@ if __name__ == '__main__':
     else:
         train()
     # train_continue()
-    # test()
