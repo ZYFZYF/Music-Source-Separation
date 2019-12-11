@@ -362,7 +362,12 @@ if __name__ == '__main__':
     if args.test:
         test(model=args.test)
     elif args.generate:
-        generate(model=args.model, wav=args.generate)
+        if os.path.isdir(args.generate):
+            for src in os.listdir(args.generate):
+                if src.endswith('mp3') or src.endswith('ncm'):
+                    generate(model=args.model, wav=args.generate + src)
+        else:
+            generate(model=args.model, wav=args.generate)
     else:
         train()
     # train_continue()
