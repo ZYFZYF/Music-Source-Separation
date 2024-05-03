@@ -1,4 +1,4 @@
-tqdm==4.39.0
+tqdm==4.66.3
 SoundFile==0.10.3.post1
 mir_eval==0.5
 museval==0.3.0
